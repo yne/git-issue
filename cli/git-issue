@@ -1,0 +1,113 @@
+#!/bin/sh
+REFS=${REFS:-refs/issue} # use refs/heads/issue to be in tree
+JQ=${JQ:-jq}
+EDITOR=${EDITOR:-vim}
+
+die() {
+	echo "$@" >&2
+	exit 1
+}
+
+usage() {
+	echo "Usage:"
+	sed -n 's/^##/    git issue/p' $(realpath $0)
+	exit 1
+}
+
+## pull [REMOTE]
+pull() {
+	git pull ${1:-origin} $REFS || die "run \"git issue push\" first"
+}
+
+## push [REMOTE]
+push() {
+	git push ${1:-origin} $REFS
+	git push || echo "git push failed (not a git repo?)"
+}
+
+## list
+list() {
+	last_tree=$(git rev-parse $REFS^{tree} --)
+	if [ $? -eq 0 ] ; then
+		git cat-file -p $last_tree | sed 's/^[^	]*	//'
+	else # suggest in case of missing ref
+		git ls-remote --heads origin $REFS
+		if [ $? -eq 0 ] ; then
+			die -e "suggestion: create your first issue with \"git issue create\""
+		else
+			die -e "suggestion: fetch issue from remote with \"git issue pull\" "
+		fi
+	fi
+}
+
+## show               # show all
+## show ID            # show specific ID
+show() {
+	if [ -z "$1" ] ; then
+		list | while IFS= read id; do
+			show $id
+		done
+	else
+		git show $REFS:$1 | jq -s '.[-1]'
+	fi
+}
+
+## create             # automatic ID
+## create ID          # use given ID
+## create ID <<< JSON # do not open $EDITOR
+create() {
+	if [ -z "$1" ] ; then
+		1=$USER$(date +%s)
+	fi
+	git cat-file -e $REFS:$1 && die "issue \"$1\" already exists"
+	tmpblob=$(mktemp --suffix=.json)
+	if [ -t 0 ]; then
+		echo -e '{\n  "title":"my ticket"\n}' > "$tmpblob"
+		$EDITOR "$tmpblob"
+	else
+		cat > "$tmpblob"
+	fi
+	# TODO: JSON Validation + re-edit if invalid
+	oneblob=$(mktemp --suffix=.json)
+	jq < $tmpblob > $oneblob
+	hash=$(git hash-object -w "$oneblob")
+	tmptree=$(mktemp)
+	echo "100644 blob $hash	$1" > "$tmptree"
+	tree_hash=$(git mktree < "$tmptree")
+	comm_hash=$(echo | git commit-tree $tree_hash)
+	git update-ref $REFS $comm_hash
+	echo git show $REFS
+	git show $REFS
+	rm "$tmptree"
+	rm "$tmpblob"
+	rm "$oneblob"
+}
+
+## edit ID
+edit() {
+	[ -z "$1" ] && usage
+	old=$(git show $REFS:$1)
+}
+
+## schema             # show current
+schema() {
+	die TODO
+}
+
+## set-schema         # will use $EDITOR
+## set-schema JSON_STR# e.g.: '{"some":"json"}'
+set-schema() {
+	die TOTO
+}
+case "$1" in
+	pull)   shift; pull ;;
+	push)   shift; push ;;
+	list)   shift; list ;;
+	show)   shift; show "$@" ;;
+	schema) shift; schema ;;
+	set-schema) shift; set-schema ;;
+	create) shift; create "$@" ;;
+	edit)   shift; edit "$@" ;;
+	help)   usage ;;
+	*)      usage ;;
+esac

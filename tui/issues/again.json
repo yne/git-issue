@@ -1,0 +1,6 @@
+{
+    "title": "Fix title in JSON files",
+    "description": "As a user I want to ensure that the title field in the JSON configuration files is properly formatted and included.",
+    "assignee": "anon@gh.com",
+    "priority": "HIGH"
+}
